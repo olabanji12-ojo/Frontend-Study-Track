@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Mail, Lock, Loader2, AlertCircle } from 'lucide-react';
+import { Mail, Lock, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import AuthLayout from '../layouts/AuthLayout';
 import api from '../services/api';
 import { useAuth } from '../hooks/useAuth';
@@ -21,6 +21,7 @@ const Login: React.FC = () => {
     const navigate = useNavigate();
     const [error, setError] = useState<string | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
 
     const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
         resolver: zodResolver(loginSchema),
@@ -101,10 +102,17 @@ const Login: React.FC = () => {
                         <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-surface-500 group-focus-within:text-brand-indigo transition-colors" />
                         <input
                             {...register('password')}
-                            type="password"
+                            type={showPassword ? 'text' : 'password'}
                             placeholder="••••••••"
-                            className="input-field pl-12"
+                            className="input-field pl-12 pr-12"
                         />
+                        <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-4 top-1/2 -translate-y-1/2 text-surface-500 hover:text-surface-300 transition-colors"
+                        >
+                            {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                        </button>
                     </div>
                     {errors.password && <p className="text-xs text-rose-400 ml-1">{errors.password.message}</p>}
                 </motion.div>
