@@ -197,9 +197,9 @@ const Dashboard: React.FC = () => {
             <div className="space-y-6">
                 <div className="flex items-center justify-between">
                     <h2 className="text-xl font-display font-semibold">My Courses</h2>
-                    <button className="text-sm font-medium text-brand-indigo flex items-center gap-1 hover:gap-2 transition-all">
+                    <Link to="/profile" className="text-sm font-medium text-brand-indigo flex items-center gap-1 hover:gap-2 transition-all">
                         See analytics <ArrowUpRight className="w-4 h-4" />
-                    </button>
+                    </Link>
                 </div>
 
                 {courses && courses.length > 0 ? (
@@ -215,7 +215,11 @@ const Dashboard: React.FC = () => {
                         </div>
                         <h3 className="text-xl font-display font-semibold mb-2">No Courses Found</h3>
                         <p className="text-surface-500 max-w-sm mb-8">You haven't added any courses yet. Start your study journey by adding your first subject.</p>
-                        <button className="btn-primary">
+                        <button
+                            onClick={() => setIsModalOpen(true)}
+                            className="px-8 py-3 bg-brand-indigo text-white rounded-2xl font-bold hover:bg-brand-indigo/90 active:scale-95 transition-all shadow-xl shadow-brand-indigo/20 flex items-center justify-center gap-2"
+                        >
+                            <Plus className="w-5 h-5" />
                             Add Your First Course
                         </button>
                     </div>
