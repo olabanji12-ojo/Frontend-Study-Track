@@ -28,6 +28,9 @@ interface AddTopicModalProps {
 const AddTopicModal: React.FC<AddTopicModalProps> = ({ isOpen, onClose, courseId, topic }) => {
     const queryClient = useQueryClient();
     const [error, setError] = useState<string | null>(null);
+    const [isBulk, setIsBulk] = useState(false);
+    const [bulkTopics, setBulkTopics] = useState<string[]>([]);
+    const [currentInput, setCurrentInput] = useState('');
 
     const { register, handleSubmit, reset, formState: { errors }, setValue } = useForm<TopicForm>({
         resolver: zodResolver(topicSchema),
@@ -41,13 +44,19 @@ const AddTopicModal: React.FC<AddTopicModalProps> = ({ isOpen, onClose, courseId
         if (topic) {
             setValue('topic_name', topic.topic_name);
             setValue('hours_spent', topic.hours_spent);
+            setIsBulk(false);
         } else {
             reset({ topic_name: '', hours_spent: 0 });
+            setBulkTopics([]);
+            setCurrentInput('');
         }
     }, [topic, setValue, reset]);
 
     const mutation = useMutation({
-        mutationFn: (data: TopicForm) => {
+        mutationFn: (data: TopicForm | { topics: any[] }) => {
+            if ('topics' in data) {
+                return api.post(`/courses/${courseId}/topics/bulk`, data);
+            }
             if (topic) {
                 return api.put(`/courses/${courseId}/topics/${topic.id}`, data);
             }
@@ -56,7 +65,11 @@ const AddTopicModal: React.FC<AddTopicModalProps> = ({ isOpen, onClose, courseId
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['topics', courseId] });
             queryClient.invalidateQueries({ queryKey: ['courses'] });
+            queryClient.invalidateQueries({ queryKey: ['course', courseId] });
             reset();
+            setBulkTopics([]);
+            setCurrentInput('');
+            setIsBulk(false);
             onClose();
         },
         onError: (err: any) => {
@@ -64,9 +77,35 @@ const AddTopicModal: React.FC<AddTopicModalProps> = ({ isOpen, onClose, courseId
         },
     });
 
+    const handleAddBulkTopic = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' && currentInput.trim()) {
+            e.preventDefault();
+            if (!bulkTopics.includes(currentInput.trim())) {
+                setBulkTopics([...bulkTopics, currentInput.trim()]);
+            }
+            setCurrentInput('');
+        }
+    };
+
+    const removeBulkTopic = (index: number) => {
+        setBulkTopics(bulkTopics.filter((_, i) => i !== index));
+    };
+
     const onSubmit = (data: TopicForm) => {
         setError(null);
-        mutation.mutate(data);
+        if (isBulk && !topic) {
+            if (bulkTopics.length === 0) {
+                setError('Please add at least one topic');
+                return;
+            }
+            const topics = bulkTopics.map((name, index) => ({
+                topic_name: name,
+                topic_order: index + 1
+            }));
+            mutation.mutate({ topics });
+        } else {
+            mutation.mutate(data);
+        }
     };
 
     return (
@@ -99,39 +138,107 @@ const AddTopicModal: React.FC<AddTopicModalProps> = ({ isOpen, onClose, courseId
                             </button>
                         </div>
 
-                        <form onSubmit={handleSubmit(onSubmit)} className="p-8 space-y-6">
+                        <form
+                            onSubmit={isBulk ? (e) => { e.preventDefault(); onSubmit({} as any); } : handleSubmit(onSubmit)}
+                            className="p-8 space-y-6"
+                        >
                             {error && (
                                 <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-sm">
                                     {error}
                                 </div>
                             )}
 
-                            <div className="space-y-1.5">
-                                <label className="text-sm font-medium text-surface-400 ml-1">Topic Name</label>
-                                <div className="relative group">
-                                    <Layers className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-surface-500 group-focus-within:text-brand-indigo transition-colors" />
-                                    <input
-                                        {...register('topic_name')}
-                                        placeholder="e.g. Quantum Mechanics Intro"
-                                        className="input-field pl-12"
-                                    />
+                            {!topic && (
+                                <div className="flex items-center justify-between p-1 bg-white/5 rounded-xl">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsBulk(false)}
+                                        className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${!isBulk ? 'bg-brand-indigo text-white shadow-lg' : 'text-surface-500 hover:text-surface-300'}`}
+                                    >
+                                        Single Topic
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsBulk(true)}
+                                        className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all ${isBulk ? 'bg-brand-indigo text-white shadow-lg' : 'text-surface-500 hover:text-surface-300'}`}
+                                    >
+                                        Bulk Add
+                                    </button>
                                 </div>
-                                {errors.topic_name && <p className="text-xs text-rose-400 ml-1">{errors.topic_name.message}</p>}
-                            </div>
+                            )}
 
-                            <div className="space-y-1.5">
-                                <label className="text-sm font-medium text-surface-400 ml-1">Hours Spent (Initial)</label>
-                                <div className="relative group">
-                                    <Clock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-surface-500 group-focus-within:text-brand-indigo transition-colors" />
-                                    <input
-                                        {...register('hours_spent', { valueAsNumber: true })}
-                                        type="number"
-                                        step="0.5"
-                                        className="input-field pl-12"
-                                    />
+                            {!isBulk ? (
+                                <>
+                                    <div className="space-y-1.5">
+                                        <label className="text-sm font-medium text-surface-400 ml-1">Topic Name</label>
+                                        <div className="relative group">
+                                            <Layers className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-surface-500 group-focus-within:text-brand-indigo transition-colors" />
+                                            <input
+                                                {...register('topic_name')}
+                                                placeholder="e.g. Quantum Mechanics Intro"
+                                                className="input-field pl-12"
+                                            />
+                                        </div>
+                                        {errors.topic_name && <p className="text-xs text-rose-400 ml-1">{errors.topic_name.message}</p>}
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <label className="text-sm font-medium text-surface-400 ml-1">Hours Spent (Initial)</label>
+                                        <div className="relative group">
+                                            <Clock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-surface-500 group-focus-within:text-brand-indigo transition-colors" />
+                                            <input
+                                                {...register('hours_spent', { valueAsNumber: true })}
+                                                type="number"
+                                                step="0.5"
+                                                className="input-field pl-12"
+                                            />
+                                        </div>
+                                        {errors.hours_spent && <p className="text-xs text-rose-400 ml-1">{errors.hours_spent.message}</p>}
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="space-y-4">
+                                    <div className="space-y-1.5">
+                                        <label className="text-sm font-medium text-surface-400 ml-1">Quick Add Topics</label>
+                                        <div className="relative group">
+                                            <Layers className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-surface-500 group-focus-within:text-brand-indigo transition-colors" />
+                                            <input
+                                                value={currentInput}
+                                                onChange={(e) => setCurrentInput(e.target.value)}
+                                                onKeyDown={handleAddBulkTopic}
+                                                placeholder="Type and press Enter..."
+                                                className="input-field pl-12"
+                                            />
+                                        </div>
+                                        <p className="text-[10px] text-surface-600 mt-1 italic">Hit Enter after each topic to add it to the list.</p>
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
+                                        {bulkTopics.map((item, index) => (
+                                            <motion.div
+                                                initial={{ scale: 0.8, opacity: 0 }}
+                                                animate={{ scale: 1, opacity: 1 }}
+                                                key={index}
+                                                className="flex items-center gap-2 px-3 py-1.5 bg-brand-indigo/10 border border-brand-indigo/20 text-brand-indigo rounded-xl text-xs font-medium group"
+                                            >
+                                                <span>{item}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeBulkTopic(index)}
+                                                    className="hover:text-rose-400 transition-colors"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            </motion.div>
+                                        ))}
+                                        {bulkTopics.length === 0 && (
+                                            <div className="w-full text-center py-8 border-2 border-dashed border-white/5 rounded-2xl">
+                                                <p className="text-xs text-surface-600">No topics added yet</p>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                                {errors.hours_spent && <p className="text-xs text-rose-400 ml-1">{errors.hours_spent.message}</p>}
-                            </div>
+                            )}
 
                             <div className="pt-4 flex gap-3">
                                 <button
@@ -149,7 +256,7 @@ const AddTopicModal: React.FC<AddTopicModalProps> = ({ isOpen, onClose, courseId
                                     {mutation.isPending ? (
                                         <Loader2 className="w-5 h-5 animate-spin" />
                                     ) : (
-                                        topic ? 'Update Topic' : 'Add Topic'
+                                        topic ? 'Update Topic' : isBulk ? `Add ${bulkTopics.length} Topics` : 'Add Topic'
                                     )}
                                 </button>
                             </div>
