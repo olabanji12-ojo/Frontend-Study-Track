@@ -9,11 +9,13 @@ import {
     CheckCircle2,
     AlertTriangle,
     ArrowUpRight,
-    MoreVertical
+    MoreVertical,
+    Trash2
 } from 'lucide-react';
 import DashboardLayout from '../layouts/DashboardLayout';
 import AddCourseModal from '../components/AddCourseModal';
 import api from '../services/api';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 interface Course {
     id: string;
@@ -60,9 +62,20 @@ const CourseCard: React.FC<{ course: Course; delay?: number }> = ({ course, dela
                     <h4 className="text-xl font-display font-semibold group-hover:text-brand-indigo transition-colors">{course.course_name}</h4>
                     <p className="text-sm font-medium text-surface-500 uppercase tracking-wider">{course.course_code}</p>
                 </div>
-                <button className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-surface-500" onClick={(e) => e.preventDefault()}>
-                    <MoreVertical className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-1">
+                    <button
+                        className="p-2 rounded-xl bg-white/5 hover:bg-rose-500/10 text-surface-500 hover:text-rose-400 transition-colors"
+                        onClick={(e) => {
+                            e.preventDefault();
+                            if (window.confirm(`Are you sure you want to delete "${course.course_name}"? This will also delete all its topics.`)) {
+                                (window as any).deleteCourse(course.id);
+                            }
+                        }}
+                        title="Delete Course"
+                    >
+                        <Trash2 className="w-4 h-4" />
+                    </button>
+                </div>
             </div>
 
             <div className="mt-auto space-y-6">
@@ -100,8 +113,76 @@ const CourseCard: React.FC<{ course: Course; delay?: number }> = ({ course, dela
     </motion.div>
 );
 
+interface RecommendedTopic {
+    id: string;
+    course_id: string;
+    topic_name: string;
+    status: string;
+    course_name: string;
+    course_code: string;
+    exam_date: string;
+}
+
+const FocusNow: React.FC = () => {
+    const { data: recommended, isLoading } = useQuery<RecommendedTopic[]>({
+        queryKey: ['recommended-topics'],
+        queryFn: () => api.get('/topics/recommended'),
+    });
+
+    if (isLoading || !recommended || recommended.length === 0) return null;
+
+    return (
+        <div className="mb-12 space-y-6">
+            <div className="flex items-center justify-between">
+                <h2 className="text-xl font-display font-semibold flex items-center gap-2">
+                    Focus Now <span className="text-brand-indigo text-xs px-2 py-0.5 rounded-full bg-brand-indigo/10 border border-brand-indigo/20">Priority</span>
+                </h2>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {recommended.map((topic, index) => (
+                    <motion.div
+                        key={topic.id}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.1 }}
+                    >
+                        <Link
+                            to={`/courses/${topic.course_id}`}
+                            className="block p-5 rounded-2xl bg-gradient-to-br from-brand-indigo/5 to-transparent border border-white/5 hover:border-brand-indigo/20 transition-all group"
+                        >
+                            <div className="flex justify-between items-start mb-3">
+                                <span className="text-[10px] font-bold text-brand-indigo uppercase tracking-widest px-2 py-0.5 rounded-md bg-brand-indigo/10">
+                                    {topic.course_code}
+                                </span>
+                                <span className="text-[10px] font-medium text-surface-500">
+                                    {new Date(topic.exam_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                                </span>
+                            </div>
+                            <h4 className="font-semibold text-white group-hover:text-brand-indigo transition-colors line-clamp-1 mb-1">
+                                {topic.topic_name}
+                            </h4>
+                            <p className="text-xs text-surface-500 line-clamp-1">In {topic.course_name}</p>
+                        </Link>
+                    </motion.div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
 const Dashboard: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const queryClient = useQueryClient();
+    const deleteMutation = useMutation({
+        mutationFn: (id: string) => api.delete(`/courses/${id}`),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['courses'] });
+        },
+    });
+
+    // Expose delete to window for the CourseCard (quick and dirty for now)
+    (window as any).deleteCourse = deleteMutation.mutate;
+
     const { data: courses, isLoading } = useQuery<Course[]>({
         queryKey: ['courses'],
         queryFn: () => api.get('/courses'),
@@ -109,10 +190,22 @@ const Dashboard: React.FC = () => {
 
     const totalHours = courses?.reduce((acc, c) => acc + (c.total_hours || 0), 0) || 0;
 
+    // Streak logic (assuming we fetch it from user profile eventually, but for now we'll mock mock/fetch if available)
+    // Actually, let's fetch user profile to get the streak_count
+    const { data: user } = useQuery<{ streak_count: number }>({
+        queryKey: ['user-profile'],
+        queryFn: () => api.get('/auth/profile'),
+    });
+
+    const averageProgress = courses?.length
+        ? Math.round(courses.reduce((acc, c) => acc + c.progress, 0) / courses.length)
+        : 0;
+
     const stats = [
         { label: 'Active Courses', value: courses?.length || 0, icon: BookOpen, color: 'bg-brand-indigo', delay: 0.1 },
-        { label: 'Completion Rate', value: `${Math.round((courses?.reduce((acc, c) => acc + c.progress, 0) || 0) / (courses?.length || 1))}%`, icon: CheckCircle2, color: 'bg-brand-emerald', delay: 0.2 },
-        { label: 'Study Time', value: `${totalHours}h`, icon: Clock, color: 'bg-brand-amber', delay: 0.3 },
+        { label: 'Completion Rate', value: `${averageProgress}%`, icon: CheckCircle2, color: 'bg-brand-emerald', delay: 0.2 },
+        { label: 'Study Streak', value: `${user?.streak_count || 0} Days`, icon: Clock, color: 'bg-brand-amber', delay: 0.3 },
+        { label: 'Study Time', value: `${totalHours}h`, icon: Clock, color: 'bg-brand-indigo', delay: 0.4 },
     ];
 
     if (isLoading) {
@@ -150,11 +243,14 @@ const Dashboard: React.FC = () => {
                 </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
                 {stats.map((stat) => (
                     <StatCard key={stat.label} {...stat} />
                 ))}
             </div>
+
+            {/* Focus Now Section */}
+            <FocusNow />
 
             {/* Quick Start Guide */}
             {(!courses || courses.length === 0) && (

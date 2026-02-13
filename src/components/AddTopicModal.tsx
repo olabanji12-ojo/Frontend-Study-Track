@@ -10,6 +10,7 @@ import api from '../services/api';
 const topicSchema = z.object({
     topic_name: z.string().min(2, 'Topic name must be at least 2 characters'),
     hours_spent: z.number().min(0, 'Hours cannot be negative').max(100, 'Keep it realistic!'),
+    parent_topic_id: z.string().optional(),
 });
 
 type TopicForm = z.infer<typeof topicSchema>;
@@ -18,14 +19,16 @@ interface AddTopicModalProps {
     isOpen: boolean;
     onClose: () => void;
     courseId: string;
+    existingTopics?: { id: string, topic_name: string }[];
     topic?: {
         id: string;
         topic_name: string;
         hours_spent: number;
+        parent_topic_id?: string;
     };
 }
 
-const AddTopicModal: React.FC<AddTopicModalProps> = ({ isOpen, onClose, courseId, topic }) => {
+const AddTopicModal: React.FC<AddTopicModalProps> = ({ isOpen, onClose, courseId, existingTopics, topic }) => {
     const queryClient = useQueryClient();
     const [error, setError] = useState<string | null>(null);
     const [isBulk, setIsBulk] = useState(false);
@@ -36,7 +39,8 @@ const AddTopicModal: React.FC<AddTopicModalProps> = ({ isOpen, onClose, courseId
         resolver: zodResolver(topicSchema),
         defaultValues: {
             topic_name: topic?.topic_name || '',
-            hours_spent: topic?.hours_spent || 0
+            hours_spent: topic?.hours_spent || 0,
+            parent_topic_id: topic?.parent_topic_id || undefined
         }
     });
 
@@ -44,9 +48,10 @@ const AddTopicModal: React.FC<AddTopicModalProps> = ({ isOpen, onClose, courseId
         if (topic) {
             setValue('topic_name', topic.topic_name);
             setValue('hours_spent', topic.hours_spent);
+            setValue('parent_topic_id', topic.parent_topic_id || '');
             setIsBulk(false);
         } else {
-            reset({ topic_name: '', hours_spent: 0 });
+            reset({ topic_name: '', hours_spent: 0, parent_topic_id: '' });
             setBulkTopics([]);
             setCurrentInput('');
         }
@@ -104,7 +109,11 @@ const AddTopicModal: React.FC<AddTopicModalProps> = ({ isOpen, onClose, courseId
             }));
             mutation.mutate({ topics });
         } else {
-            mutation.mutate(data);
+            const formattedData = {
+                ...data,
+                parent_topic_id: data.parent_topic_id === "" ? undefined : data.parent_topic_id
+            };
+            mutation.mutate(formattedData);
         }
     };
 
@@ -127,8 +136,12 @@ const AddTopicModal: React.FC<AddTopicModalProps> = ({ isOpen, onClose, courseId
                     >
                         <div className="p-8 border-b border-white/5 flex items-center justify-between">
                             <div>
-                                <h2 className="text-2xl font-display font-bold">{topic ? 'Edit Topic' : 'Add Topic'}</h2>
-                                <p className="text-surface-500 text-sm">{topic ? 'Update your study goals' : 'Define what you need to study'}</p>
+                                <h2 className="text-2xl font-display font-bold">
+                                    {topic?.id ? 'Edit Topic' : topic?.parent_topic_id ? 'Add Sub-topic' : 'Add Topic'}
+                                </h2>
+                                <p className="text-surface-500 text-sm">
+                                    {topic?.id ? 'Update your study goals' : 'Define what you need to study'}
+                                </p>
                             </div>
                             <button
                                 onClick={onClose}
@@ -148,7 +161,7 @@ const AddTopicModal: React.FC<AddTopicModalProps> = ({ isOpen, onClose, courseId
                                 </div>
                             )}
 
-                            {!topic && (
+                            {!topic?.id && !topic?.parent_topic_id && (
                                 <div className="flex items-center justify-between p-1 bg-white/5 rounded-xl">
                                     <button
                                         type="button"
@@ -194,6 +207,27 @@ const AddTopicModal: React.FC<AddTopicModalProps> = ({ isOpen, onClose, courseId
                                             />
                                         </div>
                                         {errors.hours_spent && <p className="text-xs text-rose-400 ml-1">{errors.hours_spent.message}</p>}
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="text-sm font-medium text-surface-400 ml-1">Parent Topic</label>
+                                        <div className="relative group">
+                                            <Layers className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-surface-500 group-focus-within:text-brand-indigo transition-colors" />
+                                            {topic?.parent_topic_id && !topic?.id ? (
+                                                <div className="input-field pl-12 flex items-center text-white/50 bg-white/5 cursor-not-allowed">
+                                                    {existingTopics?.find(t => t.id === topic.parent_topic_id)?.topic_name || 'Selected Topic'}
+                                                </div>
+                                            ) : (
+                                                <select
+                                                    {...register('parent_topic_id')}
+                                                    className="input-field pl-12 appearance-none"
+                                                >
+                                                    <option value="">None</option>
+                                                    {existingTopics?.filter(t => t.id !== topic?.id).map((t) => (
+                                                        <option key={t.id} value={t.id}>{t.topic_name}</option>
+                                                    ))}
+                                                </select>
+                                            )}
+                                        </div>
                                     </div>
                                 </>
                             ) : (
